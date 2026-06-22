@@ -134,6 +134,130 @@ async function run() {
       }
     });
 
+    app.get("/seller/dashboard/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+
+        const products = await TradeNestData.find({
+          sellerEmail: email,
+        }).toArray();
+
+        const orders = await ordersCollection.find({
+          sellerEmail: email,
+        }).toArray();
+
+        const paymentHistory = orders
+          .filter((order) => order.paymentMethod)
+          .slice(0, 10);
+
+        const totalProducts = products.length;
+
+        const totalSales = orders.length;
+
+        const totalRevenue = orders.reduce(
+          (sum, order) =>
+            sum + Number(order.price || 0),
+          0
+        );
+
+        const pendingOrders = orders.filter(
+          (order) => order.status === "pending"
+        ).length;
+
+        const recentOrders = orders
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt) -
+              new Date(a.createdAt)
+          )
+          .slice(0, 5);
+
+        const productSalesMap = {};
+
+        orders.forEach((order) => {
+          if (!productSalesMap[order.productTitle]) {
+            productSalesMap[order.productTitle] = {
+              name: order.productTitle,
+              sales: 0,
+              revenue: 0,
+            };
+          }
+
+          productSalesMap[
+            order.productTitle
+          ].sales += Number(order.quantity || 1);
+
+          productSalesMap[
+            order.productTitle
+          ].revenue += Number(order.price || 0);
+        });
+
+        const topProducts = Object.values(
+          productSalesMap
+        )
+          .sort((a, b) => b.sales - a.sales)
+          .slice(0, 5);
+
+        res.send({
+          totalProducts,
+          totalSales,
+          totalRevenue,
+          pendingOrders,
+          recentOrders,
+          topProducts,
+          paymentHistory,
+        });
+      } catch (error) {
+        res.status(500).send({
+          message: error.message,
+        });
+      }
+    });
+
+    app.get("/seller/dashboard/display-cards/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+
+        const products = await TradeNestData.find({
+          sellerEmail: email,
+        }).toArray();
+
+        const orders = await ordersCollection.find({
+          sellerEmail: email,
+        }).toArray();
+
+        //  ALL ORDERS (not only completed)
+        const totalProducts = products.length;
+
+        const totalSales = orders.reduce(
+          (sum, order) => sum + Number(order.quantity || 1),
+          0
+        );
+
+        const totalRevenue = orders.reduce(
+          (sum, order) => sum + Number(order.price || 0),
+          0
+        );
+
+        const pendingOrders = orders.filter(
+          (o) => o.status === "pending"
+        ).length;
+
+        res.send({
+          totalProducts,
+          totalSales,
+          totalRevenue,
+          pendingOrders,
+        });
+
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: error.message,
+        });
+      }
+    });
+
     app.get("/sellerProduct", async (req, res) => {
       try {
         const products = await TradeNestData
