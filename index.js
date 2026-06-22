@@ -181,30 +181,6 @@ async function run() {
       }
     });
 
-    app.post("/orders", async (req, res) => {
-      try {
-        const order = req.body;
-
-        order.status = "pending";
-        order.paymentMethod = "Cash on Delivery";
-        order.createdAt = new Date();
-
-        const result = await ordersCollection.insertOne(order);
-
-        res.send({
-          success: true,
-          message: "Order placed successfully",
-        });
-
-      } catch (error) {
-        console.error(error);
-        res.status(500).send({
-          success: false,
-          message: "Order failed",
-        });
-      }
-    });
-
     app.post("/wishlist", async (req, res) => {
       try {
         const wishlistItem = req.body;
@@ -363,7 +339,75 @@ async function run() {
       }
     });
 
+    app.post("/orders", async (req, res) => {
+      try {
+        const order = req.body;
 
+        // ✅ DATE FORMAT dd/mm/yyyy
+        const now = new Date();
+        const formattedDate =
+          String(now.getDate()).padStart(2, "0") +
+          "/" +
+          String(now.getMonth() + 1).padStart(2, "0") +
+          "/" +
+          now.getFullYear();
+
+        order.createdAt = formattedDate;
+
+        // ✅ AUTO TXN ID (unique)
+        order.txnId =
+          "TXN-" +
+          Date.now().toString(36).toUpperCase() +
+          "-" +
+          Math.floor(Math.random() * 1000);
+
+        // ✅ PAYMENT METHOD SAFE FIX
+        const allowedPayments = ["cod", "bkash", "nagad"];
+        if (!allowedPayments.includes(order.paymentMethod)) {
+          order.paymentMethod = "cod";
+        }
+
+        // (optional) human readable version
+        const paymentMap = {
+          cod: "Cash on Delivery",
+          bkash: "Bkash",
+          nagad: "Nagad",
+        };
+
+        order.paymentLabel = paymentMap[order.paymentMethod];
+
+        const result = await ordersCollection.insertOne(order);
+
+        res.send({
+          success: true,
+          message: "Order saved successfully",
+          txnId: order.txnId,
+        });
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({
+          success: false,
+          message: "Order failed",
+        });
+      }
+    });
+
+    app.get("/payment-history/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+
+        const payments = await ordersCollection
+          .find({ buyerEmail: email })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(payments);
+      } catch (error) {
+        res.status(500).send({
+          message: error.message,
+        });
+      }
+    });
 
     // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
