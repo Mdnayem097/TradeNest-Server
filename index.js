@@ -263,15 +263,14 @@ async function run() {
 
     app.get("/sellerProduct", async (req, res) => {
       try {
-        const products = await TradeNestData
-          .find()
-          .toArray();
+        const query = { status: "approved" };
+        const products = await TradeNestData.find(query).sort({ _id: -1 }).toArray();
 
         res.send(products);
       } catch (error) {
         res.status(500).send({
           success: false,
-          message: "Failed to fetch products",
+          message: "Failed to fetch public products",
         });
       }
     });
@@ -379,27 +378,6 @@ async function run() {
       }
     });
 
-    app.patch("/orders/cancel/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-
-        const result = await ordersCollection.updateOne(
-          { _id: new ObjectId(id) },
-          {
-            $set: {
-              status: "cancelled",
-            },
-          }
-        );
-
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({
-          message: error.message,
-        });
-      }
-    });
-
     app.get("/seller/orders/:email", async (req, res) => {
       const email = req.params.email;
 
@@ -465,59 +443,6 @@ async function run() {
         });
       }
     });
-
-    // app.post("/orders", async (req, res) => {
-    //   try {
-    //     const order = req.body;
-
-    //     // ✅ DATE FORMAT dd/mm/yyyy
-    //     const now = new Date();
-    //     const formattedDate =
-    //       String(now.getDate()).padStart(2, "0") +
-    //       "/" +
-    //       String(now.getMonth() + 1).padStart(2, "0") +
-    //       "/" +
-    //       now.getFullYear();
-
-    //     order.createdAt = formattedDate;
-
-    //     // ✅ AUTO TXN ID (unique)
-    //     order.txnId =
-    //       "TXN-" +
-    //       Date.now().toString(36).toUpperCase() +
-    //       "-" +
-    //       Math.floor(Math.random() * 1000);
-
-    //     // ✅ PAYMENT METHOD SAFE FIX
-    //     const allowedPayments = ["cod", "bkash", "nagad"];
-    //     if (!allowedPayments.includes(order.paymentMethod)) {
-    //       order.paymentMethod = "cod";
-    //     }
-
-    //     // (optional) human readable version
-    //     const paymentMap = {
-    //       cod: "Cash on Delivery",
-    //       bkash: "Bkash",
-    //       nagad: "Nagad",
-    //     };
-
-    //     order.paymentLabel = paymentMap[order.paymentMethod];
-
-    //     const result = await ordersCollection.insertOne(order);
-
-    //     res.send({
-    //       success: true,
-    //       message: "Order saved successfully",
-    //       txnId: order.txnId,
-    //     });
-    //   } catch (error) {
-    //     console.log(error);
-    //     res.status(500).send({
-    //       success: false,
-    //       message: "Order failed",
-    //     });
-    //   }
-    // });
 
     app.get("/payment-history/:email", async (req, res) => {
       try {
@@ -770,6 +695,59 @@ async function run() {
         }
       } catch (error) {
         console.error("Admin Delete User Error:", error);
+        res.status(500).json({ success: false, message: "Server error." });
+      }
+    });
+
+    // (READ)
+    app.get("/api/admin/products", async (req, res) => {
+      try {
+        const products = await db.collection("sellerProduct").find({}).sort({ _id: -1 }).toArray();
+        res.status(200).json({ success: true, products });
+      } catch (error) {
+        console.error("Admin Get Products Error:", error);
+        res.status(500).json({ success: false, message: "Internal Server Error" });
+      }
+    });
+
+    // (APPROVE / REJECT)
+    app.patch("/api/admin/products/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { status } = req.body; // 'approved' or 'rejected'
+        const { ObjectId } = require("mongodb");
+
+        const result = await db.collection("sellerProduct").updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: status } }
+        );
+
+        if (result.modifiedCount > 0) {
+          res.status(200).json({ success: true, message: `Product listing ${status} successfully.` });
+        } else {
+          res.status(400).json({ success: false, message: "No changes made." });
+        }
+      } catch (error) {
+        console.error("Admin Update Product Error:", error);
+        res.status(500).json({ success: false, message: "Server error." });
+      }
+    });
+
+    // (DELETE)
+    app.delete("/api/admin/products/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { ObjectId } = require("mongodb");
+
+        const result = await db.collection("sellerProduct").deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount > 0) {
+          res.status(200).json({ success: true, message: "Product listing deleted permanently." });
+        } else {
+          res.status(404).json({ success: false, message: "Product not found." });
+        }
+      } catch (error) {
+        console.error("Admin Delete Product Error:", error);
         res.status(500).json({ success: false, message: "Server error." });
       }
     });
