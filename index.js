@@ -752,6 +752,64 @@ async function run() {
       }
     });
 
+    // ১. সব অর্ডার লিস্ট রিড করা (READ)
+    app.get("/api/admin/orders", async (req, res) => {
+      try {
+        // অর্ডারের কালেকশন থেকে ডাটা আনা (সর্বশেষ অর্ডারগুলো আগে দেখাবে)
+        const orders = await db.collection("orders").find({}).sort({ _id: -1 }).toArray();
+        res.status(200).json({ success: true, orders });
+      } catch (error) {
+        console.error("Admin Get Orders Error:", error);
+        res.status(500).json({ success: false, message: "Internal Server Error" });
+      }
+    });
+
+    // অর্ডারের স্ট্যাটাস পরিবর্তন করা (UPDATE STATUS / TRACKING)
+    app.patch("/api/admin/orders/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { status } = req.body; // pending, processing, shipped, delivered
+        const { ObjectId } = require("mongodb");
+
+        const result = await db.collection("orders").updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: status, updatedAt: new Date() } }
+        );
+
+        if (result.modifiedCount > 0) {
+          res.status(200).json({ success: true, message: "Order status tracked successfully." });
+        } else {
+          res.status(400).json({ success: false, message: "No changes detected." });
+        }
+      } catch (error) {
+        console.error("Admin Update Order Error:", error);
+        res.status(500).json({ success: false, message: "Server error." });
+      }
+    });
+
+    // অর্ডারের বিবাদ বা সমস্যা সমাধান করা (RESOLVE DISPUTE)
+    app.patch("/api/admin/orders/:id/resolve", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { isDisputed, status } = req.body;
+        const { ObjectId } = require("mongodb");
+
+        const result = await db.collection("orders").updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { isDisputed: isDisputed, status: status, disputeResolvedAt: new Date() } }
+        );
+
+        if (result.modifiedCount > 0) {
+          res.status(200).json({ success: true, message: "Dispute file resolved and closed." });
+        } else {
+          res.status(400).json({ success: false, message: "Failed to resolve dispute." });
+        }
+      } catch (error) {
+        console.error("Admin Resolve Dispute Error:", error);
+        res.status(500).json({ success: false, message: "Server error." });
+      }
+    });
+
 
     // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
