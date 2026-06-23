@@ -164,7 +164,7 @@ async function run() {
         );
 
         const pendingOrders = orders.filter(
-          (order) => order.status === "pending"
+          (order) => order.status === "paid"
         ).length;
 
         const recentOrders = orders
@@ -243,7 +243,7 @@ async function run() {
         );
 
         const pendingOrders = orders.filter(
-          (o) => o.status === "pending"
+          (o) => o.status === "paid"
         ).length;
 
         res.send({
@@ -442,7 +442,7 @@ async function run() {
         const totalOrders = orders.length;
 
         const pendingOrders = orders.filter(
-          (order) => order.status === "pending"
+          (order) => order.status === "paid"
         ).length;
 
         const totalSpent = orders.reduce(
@@ -466,58 +466,58 @@ async function run() {
       }
     });
 
-    app.post("/orders", async (req, res) => {
-      try {
-        const order = req.body;
+    // app.post("/orders", async (req, res) => {
+    //   try {
+    //     const order = req.body;
 
-        // ✅ DATE FORMAT dd/mm/yyyy
-        const now = new Date();
-        const formattedDate =
-          String(now.getDate()).padStart(2, "0") +
-          "/" +
-          String(now.getMonth() + 1).padStart(2, "0") +
-          "/" +
-          now.getFullYear();
+    //     // ✅ DATE FORMAT dd/mm/yyyy
+    //     const now = new Date();
+    //     const formattedDate =
+    //       String(now.getDate()).padStart(2, "0") +
+    //       "/" +
+    //       String(now.getMonth() + 1).padStart(2, "0") +
+    //       "/" +
+    //       now.getFullYear();
 
-        order.createdAt = formattedDate;
+    //     order.createdAt = formattedDate;
 
-        // ✅ AUTO TXN ID (unique)
-        order.txnId =
-          "TXN-" +
-          Date.now().toString(36).toUpperCase() +
-          "-" +
-          Math.floor(Math.random() * 1000);
+    //     // ✅ AUTO TXN ID (unique)
+    //     order.txnId =
+    //       "TXN-" +
+    //       Date.now().toString(36).toUpperCase() +
+    //       "-" +
+    //       Math.floor(Math.random() * 1000);
 
-        // ✅ PAYMENT METHOD SAFE FIX
-        const allowedPayments = ["cod", "bkash", "nagad"];
-        if (!allowedPayments.includes(order.paymentMethod)) {
-          order.paymentMethod = "cod";
-        }
+    //     // ✅ PAYMENT METHOD SAFE FIX
+    //     const allowedPayments = ["cod", "bkash", "nagad"];
+    //     if (!allowedPayments.includes(order.paymentMethod)) {
+    //       order.paymentMethod = "cod";
+    //     }
 
-        // (optional) human readable version
-        const paymentMap = {
-          cod: "Cash on Delivery",
-          bkash: "Bkash",
-          nagad: "Nagad",
-        };
+    //     // (optional) human readable version
+    //     const paymentMap = {
+    //       cod: "Cash on Delivery",
+    //       bkash: "Bkash",
+    //       nagad: "Nagad",
+    //     };
 
-        order.paymentLabel = paymentMap[order.paymentMethod];
+    //     order.paymentLabel = paymentMap[order.paymentMethod];
 
-        const result = await ordersCollection.insertOne(order);
+    //     const result = await ordersCollection.insertOne(order);
 
-        res.send({
-          success: true,
-          message: "Order saved successfully",
-          txnId: order.txnId,
-        });
-      } catch (error) {
-        console.log(error);
-        res.status(500).send({
-          success: false,
-          message: "Order failed",
-        });
-      }
-    });
+    //     res.send({
+    //       success: true,
+    //       message: "Order saved successfully",
+    //       txnId: order.txnId,
+    //     });
+    //   } catch (error) {
+    //     console.log(error);
+    //     res.status(500).send({
+    //       success: false,
+    //       message: "Order failed",
+    //     });
+    //   }
+    // });
 
     app.get("/payment-history/:email", async (req, res) => {
       try {
@@ -553,7 +553,7 @@ async function run() {
               name: item.title,
               images: [item.imageUrl || "https://placehold.co/150"],
             },
-            unit_amount: Math.round(Number(item.price) * 100), 
+            unit_amount: Math.round(Number(item.price) * 100),
           },
           quantity: item.quantity,
         }));
@@ -566,21 +566,25 @@ async function run() {
           payment_method_types: ["card"],
           line_items: lineItems,
           mode: "payment",
+
           // পেমেন্ট সফল হলে এই লিংকে ব্যাক করবে এবং URL এ সেশন আইডি থাকবে
           success_url: `${process.env.CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.CLIENT_URL}/cart`,
+
           // ডাটাবেজের জন্য মেটাডাটা পাঠানো (পেমেন্ট শেষে রিসিভ করার জন্য)
           metadata: {
             buyerEmail: buyerEmail,
             txnId: tempTxnId,
             deliveryInfo: JSON.stringify(deliveryInfo),
+
             // সম্পূর্ণ কার্ট আইটেমের ডাটা স্ট্রিং আকারে সাময়িক স্টোর করা
             cartItems: JSON.stringify(cartItems.map(item => ({
               productId: item._id,
               title: item.title,
               price: item.price,
               quantity: item.quantity,
-              sellerEmail: item.sellerEmail || "" 
+              sellerEmail: item.sellerEmail || "",
+              imageUrl: item.imageUrl || "",
             })))
           },
         });
@@ -593,7 +597,6 @@ async function run() {
         res.status(500).send({ success: false, message: error.message });
       }
     });
-
 
     //  VERIFY PAYMENT AND SAVE ORDER TO DB
     app.post("/verify-payment", async (req, res) => {
@@ -636,10 +639,11 @@ async function run() {
             productId: item.productId,
             price: Number(item.price) * Number(item.quantity),
             quantity: item.quantity,
-            status: "paid",             
+            imageUrl: item.imageUrl,
+            status: "paid",
             paymentMethod: "stripe",
             paymentLabel: "Stripe Secure Card",
-            txnId: metadata.txnId,      
+            txnId: metadata.txnId,
             stripeSessionId: session_id,
             createdAt: formattedDate,
             deliveryInfo: deliveryInfo
@@ -652,7 +656,7 @@ async function run() {
             success: true,
             message: "Payment verified and order saved!",
             txnId: metadata.txnId,
-            amount: session.amount_total / 100, 
+            amount: session.amount_total / 100,
             date: formattedDate,
             orders: ordersToInsert
           });
@@ -663,6 +667,53 @@ async function run() {
       } catch (error) {
         console.error("Payment Verification Error:", error);
         res.status(500).send({ success: false, message: error.message });
+      }
+    });
+
+    app.get("/api/admin/overview", async (req, res) => {
+      try {
+        // ১. আপনার কালেকশন বা টেবিল থেকে কাউন্ট বের করা (এখানে কালেকশনের নাম আপনার প্রজেক্ট অনুযায়ী পরিবর্তন করতে পারেন)
+        const totalUsers = await db.collection("user").countDocuments({});
+        const totalProducts = await db.collection("sellerProduct").countDocuments({});
+        const totalOrders = await db.collection("orders").countDocuments({});
+
+        // ২. শুধুমাত্র 'paid' স্ট্যাটাসের টোটাল রেভিনিউ হিসাব করা
+        const paidOrders = await db.collection("orders").find({ status: "paid" }).toArray();
+        const totalRevenue = paidOrders.reduce((sum, order) => sum + Number(order.price || 0), 0);
+
+        // ৩. ডেমো চার্ট ডাটা (গত ৭ দিনের রেভিনিউ গ্রাফের জন্য)
+        const chartData = [
+          { day: "Sat", revenue: totalRevenue * 0.1 },
+          { day: "Sun", revenue: totalRevenue * 0.3 },
+          { day: "Mon", revenue: totalRevenue * 0.2 },
+          { day: "Tue", revenue: totalRevenue * 0.5 },
+          { day: "Wed", revenue: totalRevenue * 0.4 },
+          { day: "Thu", revenue: totalRevenue * 0.7 },
+          { day: "Fri", revenue: totalRevenue } // ফাইনাল কারেন্ট রেভিনিউ গ্রাফ লাইন
+        ];
+
+        // ৪. সাম্প্রতিক ৫টি অর্ডার বের করা
+        const recentOrders = await db.collection("orders")
+          .find({})
+          .sort({ _id: -1 }) // একদম নতুনগুলো আগে আসবে
+          .limit(5)
+          .toArray();
+
+        res.status(200).send({
+          success: true,
+          data: {
+            totalUsers,
+            totalProducts,
+            totalOrders,
+            totalRevenue,
+            chartData,
+            recentOrders
+          }
+        });
+
+      } catch (error) {
+        console.error("Admin Overview Error:", error);
+        res.status(500).send({ success: false, message: "Internal Server Error" });
       }
     });
 
