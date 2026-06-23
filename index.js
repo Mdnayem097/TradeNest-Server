@@ -13,6 +13,9 @@ const uri = process.env.MONGODB_URI
 app.use(cors())
 app.use(express.json())
 
+const Stripe = require('stripe');
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -532,6 +535,137 @@ async function run() {
         });
       }
     });
+
+
+    app.post("/create-checkout-session", async (req, res) => {
+      try {
+        const { cartItems, deliveryInfo, buyerEmail } = req.body;
+
+        if (!cartItems || cartItems.length === 0) {
+          return res.status(400).send({ message: "Cart is empty" });
+        }
+
+        // স্ট্রাইপের নিয়মানুযায়ী প্রোডাক্ট লিস্ট ম্যাপ করা
+        const lineItems = cartItems.map((item) => ({
+          price_data: {
+            currency: "bdt",
+            product_data: {
+              name: item.title,
+              images: [item.imageUrl || "https://placehold.co/150"],
+            },
+            unit_amount: Math.round(Number(item.price) * 100), 
+          },
+          quantity: item.quantity,
+        }));
+
+        // ইউনিক ডেমো অর্ডার আইডি এবং ট্রানজেকশন আইডি জেনারেট করা
+        const tempTxnId = "TXN-" + Date.now().toString(36).toUpperCase();
+
+        // স্ট্রাইপ ডেমো পেমেন্ট সেশন তৈরি
+        const session = await stripe.checkout.sessions.create({
+          payment_method_types: ["card"],
+          line_items: lineItems,
+          mode: "payment",
+          // পেমেন্ট সফল হলে এই লিংকে ব্যাক করবে এবং URL এ সেশন আইডি থাকবে
+          success_url: `${process.env.CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.CLIENT_URL}/cart`,
+          // ডাটাবেজের জন্য মেটাডাটা পাঠানো (পেমেন্ট শেষে রিসিভ করার জন্য)
+          metadata: {
+            buyerEmail: buyerEmail,
+            txnId: tempTxnId,
+            deliveryInfo: JSON.stringify(deliveryInfo),
+            // সম্পূর্ণ কার্ট আইটেমের ডাটা স্ট্রিং আকারে সাময়িক স্টোর করা
+            cartItems: JSON.stringify(cartItems.map(item => ({
+              productId: item._id,
+              title: item.title,
+              price: item.price,
+              quantity: item.quantity,
+              sellerEmail: item.sellerEmail || "" 
+            })))
+          },
+        });
+
+        // ফ্রন্টএন্ডে স্ট্রাইপ পেমেন্ট পেজের URL রেসপন্স পাঠানো
+        res.send({ url: session.url });
+
+      } catch (error) {
+        console.error("Stripe Session Error:", error);
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+
+
+    //  VERIFY PAYMENT AND SAVE ORDER TO DB
+    app.post("/verify-payment", async (req, res) => {
+      try {
+        const { session_id } = req.body;
+
+        if (!session_id) {
+          return res.status(400).send({ message: "Session ID is required" });
+        }
+
+        // স্ট্রাইপ থেকে সেশনের আসল স্ট্যাটাস চেক করা (সিকিউরিটির জন্য)
+        const session = await stripe.checkout.sessions.retrieve(session_id);
+
+        if (session.payment_status === "paid") {
+
+          // সেশন আইডি অলরেডি ডাটাবেজে আছে কিনা চেক করা (যাতে ডুপ্লিকেট রিকোয়েস্ট না হয়)
+          const existingOrder = await ordersCollection.findOne({ stripeSessionId: session_id });
+          if (existingOrder) {
+            return res.send({ success: true, message: "Already processed", order: existingOrder });
+          }
+
+          // মেটাডাটা থেকে ট্রানজেকশন ও কার্টের ইনফো বের করা
+          const metadata = session.metadata;
+          const cartItems = JSON.parse(metadata.cartItems);
+          const deliveryInfo = JSON.parse(metadata.deliveryInfo);
+
+          // ডেট ফরমেট করা (dd/mm/yyyy) - আপনার আগের মেথড অনুযায়ী
+          const now = new Date();
+          const formattedDate =
+            String(now.getDate()).padStart(2, "0") + "/" +
+            String(now.getMonth() + 1).padStart(2, "0") + "/" +
+            now.getFullYear();
+
+          // প্রত্যেকটা আলাদা প্রোডাক্টের জন্য অর্ডার ডাটাবেজে ইনসার্ট করা
+          // (আপনার আগের আর্কিটেকচার অনুযায়ী যেখানে প্রতি প্রোডাক্টে সেলার ইমেইল ট্র্যাক হয়)
+          const ordersToInsert = cartItems.map((item) => ({
+            buyerEmail: metadata.buyerEmail,
+            sellerEmail: item.sellerEmail,
+            productTitle: item.title,
+            productId: item.productId,
+            price: Number(item.price) * Number(item.quantity),
+            quantity: item.quantity,
+            status: "paid",             
+            paymentMethod: "stripe",
+            paymentLabel: "Stripe Secure Card",
+            txnId: metadata.txnId,      
+            stripeSessionId: session_id,
+            createdAt: formattedDate,
+            deliveryInfo: deliveryInfo
+          }));
+
+          // ডাটাবেজে একবারে সব অর্ডার সেভ করা
+          const result = await ordersCollection.insertMany(ordersToInsert);
+
+          return res.send({
+            success: true,
+            message: "Payment verified and order saved!",
+            txnId: metadata.txnId,
+            amount: session.amount_total / 100, 
+            date: formattedDate,
+            orders: ordersToInsert
+          });
+        } else {
+          return res.status(400).send({ success: false, message: "Payment not completed" });
+        }
+
+      } catch (error) {
+        console.error("Payment Verification Error:", error);
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+
 
     // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
