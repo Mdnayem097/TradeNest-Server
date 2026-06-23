@@ -717,6 +717,63 @@ async function run() {
       }
     });
 
+    //(READ)
+    app.get("/api/admin/users", async (req, res) => {
+      try {
+        const users = await db.collection("user").find({}).sort({ _id: -1 }).toArray();
+        res.status(200).json({ success: true, users });
+      } catch (error) {
+        console.error("Admin Get Users Error:", error);
+        res.status(500).json({ success: false, message: "Internal Server Error" });
+      }
+    });
+
+    // (UPDATE STATUS / ROLE)
+    app.patch("/api/admin/users/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { status, role } = req.body;
+        const { ObjectId } = require("mongodb");
+
+        let updateFields = {};
+        if (status) updateFields.status = status;
+        if (role) updateFields.role = role;
+
+        const result = await db.collection("user").updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateFields }
+        );
+
+        if (result.modifiedCount > 0) {
+          res.status(200).json({ success: true, message: "User updated successfully." });
+        } else {
+          res.status(400).json({ success: false, message: "No changes made." });
+        }
+      } catch (error) {
+        console.error("Admin Update User Error:", error);
+        res.status(500).json({ success: false, message: "Server error." });
+      }
+    });
+
+    // (DELETE)
+    app.delete("/api/admin/users/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { ObjectId } = require("mongodb");
+
+        const result = await db.collection("user").deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount > 0) {
+          res.status(200).json({ success: true, message: "User deleted permanently." });
+        } else {
+          res.status(404).json({ success: false, message: "User not found." });
+        }
+      } catch (error) {
+        console.error("Admin Delete User Error:", error);
+        res.status(500).json({ success: false, message: "Server error." });
+      }
+    });
+
 
     // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
