@@ -3,11 +3,6 @@ const express = require('express')
 const dotenv = require('dotenv')
 const cors = require('cors');
 const jwt = require("jsonwebtoken");
-// const { createRemoteJWKSet, jwtVerify } = require('jose-cjs');
-
-// const jwks = createRemoteJWKSet(
-//   new URL(`${process.env.CLIENT_URL || 'http://localhost:3000'}/api/auth/jwks`)
-// );
 
 
 dotenv.config()
@@ -69,29 +64,6 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   }
 });
-
-
-// const verifyToken = async (req, res, next) => {
-//   const header = req?.headers.authorization;
-//   if (!header) {
-//     return res.status(401).json({ success: false, message: 'Unauthorized: No token provided' });
-//   }
-
-//   const token = header.split(" ")[1];
-//   if (!token) {
-//     return res.status(401).json({ success: false, message: 'Unauthorized: Invalid token format' });
-//   }
-
-//   try {
-//     const { payload } = await jwtVerify(token, jwks);
-//     req.user = payload; 
-
-//     next();
-//   } catch (error) {
-//     console.error("JWT Verification Fail:", error.message);
-//     return res.status(403).json({ success: false, message: 'Forbidden: Invalid or expired token' });
-//   }
-// };
 
 async function run() {
   try {
