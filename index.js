@@ -100,6 +100,7 @@ async function run() {
     const TradeNestData = db.collection('sellerProduct')
     const ordersCollection = db.collection("orders");
     const wishlistCollection = db.collection("wishlist");
+    const userCollection = db.collection("user");
 
     app.post('/seller/add-product', verifyToken, async (req, res) => {
       try {
@@ -852,6 +853,44 @@ async function run() {
       } catch (error) {
         console.error("Admin Resolve Dispute Error:", error);
         res.status(500).json({ success: false, message: "Server error." });
+      }
+    });
+
+    app.patch("/api/user/update-profile", verifyToken, async (req, res) => {
+      try {
+        const { name, image } = req.body;
+
+        if (!name) {
+          return res.status(400).json({
+            success: false,
+            message: "Name is required",
+          });
+        }
+
+        const email = req.decoded.email;
+
+        const result = await userCollection.updateOne(
+          { email },
+          {
+            $set: {
+              name,
+              image,
+              updatedAt: new Date(),
+            },
+          }
+        );
+        res.status(200).json({
+          success: true,
+          message: "Profile updated successfully",
+          modifiedCount: result.modifiedCount,
+        });
+      } catch (error) {
+        console.error("Profile Update Error:", error);
+
+        res.status(500).json({
+          success: false,
+          message: "Internal Server Error",
+        });
       }
     });
 
