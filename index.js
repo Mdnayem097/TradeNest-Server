@@ -67,7 +67,7 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const db = client.db('TradeNest')
     const TradeNestData = db.collection('sellerProduct')
     const ordersCollection = db.collection("orders");
