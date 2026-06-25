@@ -2,7 +2,12 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const express = require('express')
 const dotenv = require('dotenv')
 const cors = require('cors');
-const { createRemoteJWKSet, jwtVerify } = require('jose-cjs');
+const jwt = require("jsonwebtoken");
+// const { createRemoteJWKSet, jwtVerify } = require('jose-cjs');
+
+// const jwks = createRemoteJWKSet(
+//   new URL(`${process.env.CLIENT_URL || 'http://localhost:3000'}/api/auth/jwks`)
+// );
 
 
 dotenv.config()
@@ -12,6 +17,47 @@ const uri = process.env.MONGODB_URI
 
 app.use(cors())
 app.use(express.json())
+
+app.post("/jwt", async (req, res) => {
+  const user = req.body;
+
+  const token = jwt.sign(
+    user,
+    process.env.JWT_SECRET,
+    {
+      expiresIn: "7d",
+    }
+  );
+
+  res.send({ token });
+});
+
+const verifyToken = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return res.status(401).send({
+      message: "Unauthorized Access",
+    });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  jwt.verify(
+    token,
+    process.env.JWT_SECRET,
+    (err, decoded) => {
+      if (err) {
+        return res.status(401).send({
+          message: "Invalid Token",
+        });
+      }
+
+      req.decoded = decoded;
+      next();
+    }
+  );
+};
 
 const Stripe = require('stripe');
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -24,29 +70,28 @@ const client = new MongoClient(uri, {
   }
 });
 
-// const jwks = createRemoteJWKSet(
-//   new URL(`${process.env.CLIENT_URL}/api/auth/jwks`)
-// )
 
 // const verifyToken = async (req, res, next) => {
-//   const header = req?.headers.authorization
+//   const header = req?.headers.authorization;
 //   if (!header) {
-//     return res.status(401).json({ message: 'Unauthorized' });
-//   }
-//   const token = header.split(" ")[1]
-//   console.log("TOKEN:", token);
-//   if (!token) {
-//     return res.status(401).json({ message: 'Unauthorized' });
-//   }
-//   try {
-//     const { payload } = await jwtVerify(token, jwks)
-//     console.log(payload)
-//     next()
-//   } catch (error) {
-//     return res.status(403).json({ message: 'Forbidden' });
+//     return res.status(401).json({ success: false, message: 'Unauthorized: No token provided' });
 //   }
 
-// }
+//   const token = header.split(" ")[1];
+//   if (!token) {
+//     return res.status(401).json({ success: false, message: 'Unauthorized: Invalid token format' });
+//   }
+
+//   try {
+//     const { payload } = await jwtVerify(token, jwks);
+//     req.user = payload; 
+
+//     next();
+//   } catch (error) {
+//     console.error("JWT Verification Fail:", error.message);
+//     return res.status(403).json({ success: false, message: 'Forbidden: Invalid or expired token' });
+//   }
+// };
 
 async function run() {
   try {
@@ -56,7 +101,7 @@ async function run() {
     const ordersCollection = db.collection("orders");
     const wishlistCollection = db.collection("wishlist");
 
-    app.post('/seller/add-product', async (req, res) => {
+    app.post('/seller/add-product', verifyToken, async (req, res) => {
       try {
         const product = req.body;
 
@@ -72,7 +117,7 @@ async function run() {
       }
     });
 
-    app.get("/seller/my-products/:email", async (req, res) => {
+    app.get("/seller/my-products/:email", verifyToken, async (req, res) => {
       try {
         const email = req.params.email;
 
@@ -89,7 +134,7 @@ async function run() {
       }
     });
 
-    app.delete("/seller/product/:id", async (req, res) => {
+    app.delete("/seller/product/:id", verifyToken, async (req, res) => {
       try {
         const id = req.params.id;
 
@@ -103,7 +148,7 @@ async function run() {
       }
     });
 
-    app.patch("/seller/product/:id", async (req, res) => {
+    app.patch("/seller/product/:id", verifyToken, async (req, res) => {
       try {
         const id = req.params.id;
         const updatedData = req.body;
@@ -121,7 +166,7 @@ async function run() {
       }
     });
 
-    app.get("/seller/product/:id", async (req, res) => {
+    app.get("/seller/product/:id", verifyToken, async (req, res) => {
       try {
         const id = req.params.id;
 
@@ -137,7 +182,7 @@ async function run() {
       }
     });
 
-    app.get("/seller/dashboard/:email", async (req, res) => {
+    app.get("/seller/dashboard/:email", verifyToken, async (req, res) => {
       try {
         const email = req.params.email;
 
@@ -217,7 +262,7 @@ async function run() {
       }
     });
 
-    app.get("/seller/dashboard/display-cards/:email", async (req, res) => {
+    app.get("/seller/dashboard/display-cards/:email", verifyToken, async (req, res) => {
       try {
         const email = req.params.email;
 
@@ -307,7 +352,7 @@ async function run() {
       }
     });
 
-    app.post("/wishlist", async (req, res) => {
+    app.post("/wishlist", verifyToken, async (req, res) => {
       try {
         const wishlistItem = req.body;
 
@@ -340,12 +385,12 @@ async function run() {
       }
     });
 
-    app.get("/wishlist", async (req, res) => {
+    app.get("/wishlist", verifyToken, async (req, res) => {
       const result = await wishlistCollection.find().toArray();
       res.send(result);
     });
 
-    app.delete("/wishlist/:id", async (req, res) => {
+    app.delete("/wishlist/:id", verifyToken, async (req, res) => {
       try {
         const id = req.params.id;
 
@@ -361,7 +406,7 @@ async function run() {
       }
     });
 
-    app.get("/my-orders/:email", async (req, res) => {
+    app.get("/my-orders/:email", verifyToken, async (req, res) => {
       try {
         const email = req.params.email;
 
@@ -378,7 +423,7 @@ async function run() {
       }
     });
 
-    app.get("/seller/orders/:email", async (req, res) => {
+    app.get("/seller/orders/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
 
       const orders = await ordersCollection
@@ -389,7 +434,7 @@ async function run() {
       res.send(orders);
     });
 
-    app.patch("/orders/:id", async (req, res) => {
+    app.patch("/orders/:id", verifyToken, async (req, res) => {
       try {
         const id = req.params.id;
         const { status } = req.body;
@@ -405,7 +450,7 @@ async function run() {
       }
     });
 
-    app.get("/buyer/dashboard/:email", async (req, res) => {
+    app.get("/buyer/dashboard/:email", verifyToken, async (req, res) => {
       try {
         const email = req.params.email;
 
@@ -444,7 +489,7 @@ async function run() {
       }
     });
 
-    app.get("/payment-history/:email", async (req, res) => {
+    app.get("/payment-history/:email", verifyToken, async (req, res) => {
       try {
         const email = req.params.email;
 
@@ -462,7 +507,7 @@ async function run() {
     });
 
 
-    app.post("/create-checkout-session", async (req, res) => {
+    app.post("/create-checkout-session", verifyToken, async (req, res) => {
       try {
         const { cartItems, deliveryInfo, buyerEmail } = req.body;
 
@@ -524,7 +569,7 @@ async function run() {
     });
 
     //  VERIFY PAYMENT AND SAVE ORDER TO DB
-    app.post("/verify-payment", async (req, res) => {
+    app.post("/verify-payment", verifyToken, async (req, res) => {
       try {
         const { session_id } = req.body;
 
@@ -595,7 +640,7 @@ async function run() {
       }
     });
 
-    app.get("/api/admin/overview", async (req, res) => {
+    app.get("/api/admin/overview", verifyToken, async (req, res) => {
       try {
         // ১. আপনার কালেকশন বা টেবিল থেকে কাউন্ট বের করা (এখানে কালেকশনের নাম আপনার প্রজেক্ট অনুযায়ী পরিবর্তন করতে পারেন)
         const totalUsers = await db.collection("user").countDocuments({});
@@ -643,7 +688,7 @@ async function run() {
     });
 
     //(READ)
-    app.get("/api/admin/users", async (req, res) => {
+    app.get("/api/admin/users", verifyToken, async (req, res) => {
       try {
         const users = await db.collection("user").find({}).sort({ _id: -1 }).toArray();
         res.status(200).json({ success: true, users });
@@ -654,7 +699,7 @@ async function run() {
     });
 
     // (UPDATE STATUS / ROLE)
-    app.patch("/api/admin/users/:id", async (req, res) => {
+    app.patch("/api/admin/users/:id", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
         const { status, role } = req.body;
@@ -681,7 +726,7 @@ async function run() {
     });
 
     // (DELETE)
-    app.delete("/api/admin/users/:id", async (req, res) => {
+    app.delete("/api/admin/users/:id", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
         const { ObjectId } = require("mongodb");
@@ -700,7 +745,7 @@ async function run() {
     });
 
     // (READ)
-    app.get("/api/admin/products", async (req, res) => {
+    app.get("/api/admin/products", verifyToken, async (req, res) => {
       try {
         const products = await db.collection("sellerProduct").find({}).sort({ _id: -1 }).toArray();
         res.status(200).json({ success: true, products });
@@ -711,7 +756,7 @@ async function run() {
     });
 
     // (APPROVE / REJECT)
-    app.patch("/api/admin/products/:id", async (req, res) => {
+    app.patch("/api/admin/products/:id", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
         const { status } = req.body; // 'approved' or 'rejected'
@@ -734,7 +779,7 @@ async function run() {
     });
 
     // (DELETE)
-    app.delete("/api/admin/products/:id", async (req, res) => {
+    app.delete("/api/admin/products/:id", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
         const { ObjectId } = require("mongodb");
@@ -752,8 +797,8 @@ async function run() {
       }
     });
 
-    // ১. সব অর্ডার লিস্ট রিড করা (READ)
-    app.get("/api/admin/orders", async (req, res) => {
+    //(READ)
+    app.get("/api/admin/orders", verifyToken, async (req, res) => {
       try {
         // অর্ডারের কালেকশন থেকে ডাটা আনা (সর্বশেষ অর্ডারগুলো আগে দেখাবে)
         const orders = await db.collection("orders").find({}).sort({ _id: -1 }).toArray();
@@ -764,8 +809,8 @@ async function run() {
       }
     });
 
-    // অর্ডারের স্ট্যাটাস পরিবর্তন করা (UPDATE STATUS / TRACKING)
-    app.patch("/api/admin/orders/:id", async (req, res) => {
+    //  (UPDATE STATUS / TRACKING)
+    app.patch("/api/admin/orders/:id", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
         const { status } = req.body; // pending, processing, shipped, delivered
@@ -787,8 +832,8 @@ async function run() {
       }
     });
 
-    // অর্ডারের বিবাদ বা সমস্যা সমাধান করা (RESOLVE DISPUTE)
-    app.patch("/api/admin/orders/:id/resolve", async (req, res) => {
+    // (RESOLVE DISPUTE)
+    app.patch("/api/admin/orders/:id/resolve", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
         const { isDisputed, status } = req.body;
